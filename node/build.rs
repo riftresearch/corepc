@@ -159,18 +159,27 @@ mod download {
             // Code signing for arm64 macOS:
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             {
-                use std::process::Command;
-                let status = Command::new("codesign")
+                use std::process::{Command, Stdio};
+                let output = Command::new("codesign")
                     .arg("-s")
                     .arg("-")
                     .arg(existing_filename.to_str().unwrap())
-                    .status()
+                    .stderr(Stdio::piped())
+                    .output()
                     .with_context(|| "failed to execute codesign")?;
-                if !status.success() {
-                    return Err(anyhow::anyhow!(
-                        "codesign failed with exit code {}",
-                        status.code().unwrap_or(-1)
-                    ));
+                
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    // Ignore the error if the binary is already signed
+                    if !stderr.contains("is already signed") {
+                        return Err(anyhow::anyhow!(
+                            "codesign failed with exit code {}: {}",
+                            output.status.code().unwrap_or(-1),
+                            stderr
+                        ));
+                    }
+                    // If already signed, we can continue
+                    eprintln!("Note: bitcoind binary is already signed, skipping codesign");
                 }
             }
         }
